@@ -108,24 +108,27 @@ AI code assistants struggle with:
 Clone the repository:
 
 ```bash
-git clone https://github.com/mikeNickaloff/AGENTIC-CODING-FRAMEWORK
-cd AGENTIC-CODING-FRAMEWORK
+git clone https://github.com/mikeNickaloff/AgentSQLMemory
+cd AgentSQLMemory
 chmod +x *wheel.sh
 ```
 
-Initialize the database:
-
+Copy wheel.sh and Agents.MD to any project:
 ```bash
-./wheel.sh 
+cp * /path/to/my_project/
 ```
 
-This creates:
-
+Run Agentic Coding Tool (Like OpenAI codex or claude) from the project directory
+```bash
+codex
 ```
-WHEEL.db
-```
 
-with the required tables.
+Prompt the Agent to `read Agents.MD and scan the project's files for entry into the database.`
+
+After some time scanning (only takes a long time on initial scan, afterwards no scanning required)...
+
+Prompt agent to make changes to your code as you normally would and witness the magic.. the AI finally can code right!
+
 
 ---
 
