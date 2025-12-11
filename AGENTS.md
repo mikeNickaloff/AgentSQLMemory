@@ -88,3 +88,288 @@
 * Dont reinvent the wheel or modify existing code unless absolutely necessary.
 * Look for a way to implement changes by using existing code first, then if not possible, create new code paths.
 * Work slowly and go step-by-step to make compact, requirement fulfilling, working, elegant code.
+
+# Decomposition Engine Specification (DEngine)
+
+## 1. Overview
+
+The Decomposition Engine (DEngine) provides structured functional decomposition,
+rule generation, dependency validation, primitive extraction, and system
+recomposition capabilities for AGENTOS.
+
+DEngine enables agents to transform any high-level concept, task, subsystem,
+algorithm, or architecture into a validated hierarchical structure suitable for
+reuse, recombination, and synthesis.
+
+It works alongside the AgentSQLMemory database, the semantic interface exposed
+via `wheel.sh`, and the LLM-generation layer to ensure that agents produce
+architecturally coherent and dependency-consistent designs.
+
+---
+
+## 2. System Responsibilities
+
+DEngine performs the following duties:
+
+1. **Recursive Functional Decomposition**
+   - Break any concept into subsystems, components, and primitives.
+   - Maintain hierarchical parent→child relationships.
+
+2. **Rule Generation**
+   - Produce domain-appropriate constraints such as:
+     - include/build requirements (e.g., Qt `#include <QStateMachine>`)
+     - ordering constraints
+     - conceptual prerequisites
+     - runtime dependencies
+     - safety constraints
+   - Encode all rules explicitly in AgentSQLMemory.
+
+3. **Rule Validation**
+   - Detect contradictions, missing prerequisites, or dependency loops.
+   - Identify unresolved or low-confidence rules.
+
+4. **Primitive Extraction**
+   - Identify terminal actions, functions, or capabilities that form reusable
+     building blocks across domains.
+
+5. **Pattern-Based Recomposition**
+   - Rebuild systems using known decomposition trees, primitives, and patterns.
+   - Guarantee structural integrity before synthesis.
+
+6. **Persistent Knowledge Storage**
+   - Store all nodes, rules, primitives, and patterns in SQLite for long-term
+     reuse across projects.
+
+---
+
+## 3. Data Model Specification
+
+### 3.1 Decomposition Units
+
+Represents any concept, subsystem, component, or primitive.
+
+| Field | Type | Description |
+|------|------|-------------|
+| id | INTEGER | Primary key |
+| name | TEXT | Unit name |
+| type | TEXT | subsystem/component/primitive/rule |
+| description | TEXT | Generated description |
+| parent_id | INTEGER | Parent decomposition unit |
+| context | TEXT | Domain or environment (Qt, robotics, ML, etc.) |
+| confidence | REAL | LLM confidence (0–1) |
+
+---
+
+### 3.2 Dependency Rules
+
+Represents constraints required for a decomposition unit.
+
+| Field | Type | Description |
+|-------|--------|-------------|
+| id | INTEGER | Primary key |
+| unit_id | INTEGER | FK → decomposition_units.id |
+| requirement | TEXT | Dependency (e.g., "requires `<QStateMachine>`") |
+| rule_type | TEXT | include, build, runtime, ordering, safety, conceptual |
+| reason | TEXT | Why this rule exists |
+| generated_by | TEXT | Model or agent responsible |
+
+---
+
+### 3.3 Primitive Library
+
+Terminal building blocks used in system design.
+
+| Field | Type |
+|--------|-------|
+| id | INTEGER |
+| name | TEXT |
+| description | TEXT |
+| input_signature | TEXT |
+| output_signature | TEXT |
+
+---
+
+### 3.4 Recomposition Patterns
+
+Reusable construction templates for rebuilding systems.
+
+| Field | Type |
+|--------|--------|
+| id | INTEGER |
+| pattern_name | TEXT |
+| description | TEXT |
+| structure | TEXT (JSON) |
+| domain | TEXT |
+
+---
+
+## 4. Decomposition Algorithm
+
+### 4.1 High-Level Procedure
+
+1. Receive `(concept, context)` from agent.
+2. Check if decomposition exists in memory.
+3. If not, create a new decomposition root.
+4. Request subsystem list from LLM.
+5. Insert subsystem units into memory.
+6. For each subsystem:
+   - Request dependency rules.
+   - Validate rules.
+   - Store rules.
+   - If the subsystem is non-terminal, recursively decompose.
+7. Return complete decomposition tree.
+
+---
+
+## 5. Rule Generation Protocol
+
+Whenever a subsystem is created, the following LLM prompt must be issued:
+
+```
+Generate all domain-specific dependencies for subsystem X in context Y.
+Include include/build requirements, ordering constraints,
+conceptual prerequisites, runtime needs, and safety considerations.
+Explain why each rule is necessary.
+```
+
+Each generated rule must be:
+
+1. Stored in `dependency_rules`.
+2. Validated by the Rule Validator.
+3. Tagged with `generated_by`.
+
+---
+
+## 6. Dependency Validation Protocol
+
+Validations include:
+
+- **Cycle detection**  
+  Ensure no rule introduces circular dependencies.
+
+- **Missing prerequisites**  
+  If a rule references a unit not in memory, the engine must:
+  - create a placeholder unit
+  - force decomposition of that unit
+
+- **Conflict resolution**  
+  If the LLM generates contradictory rules, the validator:
+  - flags them
+  - assigns a low confidence score
+  - requests clarification or regeneration
+
+---
+
+## 7. Primitive Extraction Rules
+
+A decomposition unit is considered a primitive if:
+
+- It represents an indivisible action or capability.
+- It has no valid subsystem decomposition.
+- It has a clear input/output behavioral signature.
+
+All primitives must be registered in `primitives`.
+
+---
+
+## 8. Recomposition Engine
+
+### 8.1 Inputs
+
+- decomposition tree  
+- dependency rules  
+- primitives  
+- recomposition patterns  
+
+### 8.2 Outputs
+
+- validated architecture  
+- generated boilerplate  
+- dependency graph  
+- ordered execution plan  
+- domain-specific system template  
+
+### 8.3 Process
+
+1. Load all decomposition units for concept.
+2. Collect all dependency rules.
+3. Map units to primitives.
+4. Match structure against recomposition patterns.
+5. Ensure all constraints are satisfied.
+6. Synthesize final system.
+
+---
+
+## 9. Integration With wheel.sh
+
+### New Commands
+
+```
+wheel decomposition expand <concept>
+wheel decomposition tree <concept>
+wheel decomposition rules <unit>
+wheel decomposition validate <unit>
+wheel primitives list
+wheel primitives find <pattern>
+wheel synthesize <concept>
+```
+
+These commands must call the Decomposition Engine and retrieve SQLite-backed data.
+
+---
+
+## 10. Agent Behavior Requirements
+
+Agents MUST:
+
+- Use DEngine for all non-trivial tasks.
+- Never output architectural designs without validated decomposition.
+- Store every decomposition result in memory for reuse.
+- Always retrieve prior decomposition trees before generating new ones.
+- Use decomposition trees when writing code, documentation, or designs.
+- Ensure rule consistency when generating domain-specific boilerplate.
+
+---
+
+## 11. Output Guarantees
+
+DEngine guarantees:
+
+- Every concept produces a complete decomposition tree.
+- All subsystems and rules are explicitly stored.
+- Primitive library grows over time.
+- Synthesized systems maintain structural integrity.
+- Multiple concepts can be recomposed into new hybrids.
+
+---
+
+## 12. Failure Handling
+
+If decomposition yields:
+
+- Missing rules  
+- Contradictory rules  
+- Circular dependencies  
+- Low-confidence primitives  
+
+The engine must regenerate the affected section until:
+
+- A consistent rule set exists  
+- All dependencies are satisfied  
+- All primitives are defined  
+
+---
+
+## 13. Versioning
+
+Version the decomposition schema using semantic versioning under:
+
+```
+/agentos/decomposition/version.json
+```
+
+All agents must check compatibility before loading old decomposition trees.
+
+---
+
+# END OF DECOMPOSITION ENGINE SPECIFICATION
