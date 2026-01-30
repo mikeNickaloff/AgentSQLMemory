@@ -54,7 +54,7 @@ File shortcuts:
       List all files with ids and descriptions ordered by relpath.
   files search TERM...
       Keyword search (AND) over file paths and descriptions.
-  files add --relpath=PATH [--description=TEXT]
+  files add --relpath=PATH|--file=PATH [--description=TEXT]
       Insert a new file row; description defaults to NULL when omitted.
   files del [--file_id=ID | --file=PATH]
       Delete a file row by id or matching relpath.
@@ -82,6 +82,13 @@ Notes:
   • LIKE filters wrap values in %...% unless you provide %/_ yourself.
   • `search` spreads the terms across the most relevant columns for each table.
   • `raw` with no SQL launches an interactive sqlite3 shell.
+
+Spec memory:
+  spec_memory is created in the schema initialization block in ensure_db.
+  Unresolved requirements are rows where kind='question' AND status='open'.
+  Insert new spec rows with the insert command; required columns are path, kind, status, content.
+  Optional spec columns are parent_id, depends_on, branch, supersedes_id, created_at.
+  Update status with update on spec_memory; never delete spec_memory rows.
 USAGE
 }
 
@@ -139,6 +146,7 @@ ensure_db() {
 
   local sql_seed
   local target_db="./WHEEL.db"
+  local created_db=0
 
   if [[ "$DB_PATH" != "WHEEL.db" && "$DB_PATH" != "./WHEEL.db" ]]; then
     target_db="$DB_PATH"
@@ -149,11 +157,10 @@ ensure_db() {
   if [[ -f "$sql_seed" ]]; then
     debug "bootstrapping database from $sql_seed"
     sqlite3 "$target_db" < "$sql_seed" || fatal "failed to bootstrap database from $sql_seed"
-    return
-  fi
-
-  debug "initializing new database schema at $target_db"
-  sqlite3 "$target_db" <<'SQL' || fatal "failed to initialize blank database schema"
+    created_db=1
+  else
+    debug "initializing new database schema at $target_db"
+    sqlite3 "$target_db" <<'SQL' || fatal "failed to initialize blank database schema"
 BEGIN;
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY,
@@ -209,11 +216,56 @@ CREATE TABLE IF NOT EXISTS todo (
   FOREIGN KEY(change_defs_id) REFERENCES change_defs(id),
   FOREIGN KEY(change_files_id) REFERENCES change_files(id)
 );
+CREATE TABLE IF NOT EXISTS spec_memory (
+  id INTEGER PRIMARY KEY,
+  path TEXT NOT NULL,
+  parent_id INTEGER,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  content TEXT NOT NULL,
+  depends_on TEXT,
+  branch TEXT,
+  supersedes_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(parent_id) REFERENCES spec_memory(id),
+  FOREIGN KEY(supersedes_id) REFERENCES spec_memory(id)
+);
 COMMIT;
 SQL
 
-  debug "dumping freshly initialized database schema to $sql_seed"
-  sqlite3 "$target_db" .dump > "$sql_seed" || fatal "failed to dump database to $sql_seed"
+    created_db=1
+
+    debug "dumping freshly initialized database schema to $sql_seed"
+    sqlite3 "$target_db" .dump > "$sql_seed" || fatal "failed to dump database to $sql_seed"
+  fi
+
+  if [[ $created_db -eq 1 ]]; then
+    run_bootstrap_scan "$target_db"
+  fi
+}
+
+run_bootstrap_scan() {
+  local target_db="$1"
+  if [[ "${WHEEL_SKIP_AUTO_SCAN:-0}" == "1" ]]; then
+    debug "skip bootstrap scan because WHEEL_SKIP_AUTO_SCAN=1"
+    return
+  fi
+
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local scan_script="$script_dir/wheel-scan.sh"
+  if [[ ! -f "$scan_script" ]]; then
+    debug "wheel-scan.sh not found; skipping bootstrap scan"
+    return
+  fi
+
+  local scan_root="$PWD"
+  debug "bootstrapping database with $scan_script"
+  if [[ -x "$scan_script" ]]; then
+    WHEEL_DB_PATH="$target_db" "$scan_script" --path "$scan_root" >/dev/null
+  else
+    WHEEL_DB_PATH="$target_db" bash "$scan_script" --path "$scan_root" >/dev/null
+  fi
 }
 
 refresh_sql_dump() {
@@ -304,6 +356,7 @@ normalize_table_name() {
     change_def|changedef|change_defs|changedefs) echo "change_defs";;
     todo|todos) echo "todo";;
     ref|refs) echo "refs";;
+    spec|specs|spec_memory|specmemory|specmem) echo "spec_memory";;
     *) echo "$lower";;
   esac
 }
@@ -311,7 +364,7 @@ normalize_table_name() {
 is_supported_query_table() {
   local tbl="${1:-}"
   case "$tbl" in
-    defs|files|changes|change_files|change_defs|todo|refs) return 0;;
+    defs|files|changes|change_files|change_defs|todo|refs|spec_memory) return 0;;
     *) return 1;;
   esac
 }
@@ -785,6 +838,12 @@ EOF
       from_clause=$'FROM refs\nLEFT JOIN defs d ON d.id = refs.def_id\nLEFT JOIN defs rd ON rd.id = refs.reference_def_id'
       default_order="refs.id"
       search_cols=("d.signature" "rd.signature")
+      ;;
+    spec_memory)
+      select_clause="spec_memory.id, spec_memory.path, spec_memory.parent_id, spec_memory.kind, spec_memory.status, spec_memory.content, spec_memory.depends_on, spec_memory.branch, spec_memory.supersedes_id, spec_memory.created_at"
+      from_clause="FROM spec_memory"
+      default_order="spec_memory.id"
+      search_cols=("spec_memory.path" "spec_memory.kind" "spec_memory.status" "spec_memory.content" "spec_memory.depends_on" "spec_memory.branch")
       ;;
     *)
       fatal "unsupported table for query: $table"
@@ -1723,10 +1782,12 @@ files_add() {
     case "$1" in
       --relpath=*) relpath="${1#*=}"; shift;;
       --relpath)   relpath="$2"; shift 2;;
+      --file=*)    relpath="${1#*=}"; shift;;
+      --file)      relpath="$2"; shift 2;;
       --description=*) description="${1#*=}"; shift;;
       --description)   description="$2"; shift 2;;
       --help|-h)
-        fatal "usage: $PROG files add --relpath=PATH [--description=TEXT]"
+        fatal "usage: $PROG files add --relpath=PATH|--file=PATH [--description=TEXT]"
         ;;
       --) shift; break;;
       -*)
@@ -1738,7 +1799,7 @@ files_add() {
     esac
   done
 
-  [[ -n "$relpath" ]] || fatal "files add requires --relpath"
+  [[ -n "$relpath" ]] || fatal "files add requires --relpath/--file"
   local relpath_sql
   relpath_sql="$(sql_quote "$relpath")"
   local description_sql
