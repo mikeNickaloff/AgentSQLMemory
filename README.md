@@ -1,4 +1,4 @@
-# **A Language-Agnostic Code Intelligence Memory System**
+# **A Language-Agnostic Code Intelligence Memory / Programming System**
 
 *wheel.sh* is a lightweight, persistent code-intelligence layer designed to extend the working memory of AI coding assistants by storing structured metadata, references, and descriptions in a local SQLite database.  
 This enables AI models to recall details about any codebase instantly, without repeatedly scanning the source tree or exceeding context window limits.
