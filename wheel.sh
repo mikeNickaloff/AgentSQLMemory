@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+#set -euo pipefail
 
 PROG="${0##*/}"
 DB_PATH="WHEEL.db"
 PARAM_PREF="auto"
 PARAM_STATE=""
 VERBOSE=0
+SQLITE_BUSY_TIMEOUT_MS="${WHEEL_SQLITE_BUSY_TIMEOUT_MS:-15000}"
+SQLITE_PRAGMA_DB_PATH=""
 
 usage() {
   cat <<'USAGE'
@@ -82,6 +84,7 @@ Notes:
   • LIKE filters wrap values in %...% unless you provide %/_ yourself.
   • `search` spreads the terms across the most relevant columns for each table.
   • `raw` with no SQL launches an interactive sqlite3 shell.
+  • Set WHEEL_SQLITE_BUSY_TIMEOUT_MS (default 15000) to tune sqlite lock wait time.
 
 Spec memory:
   spec_memory is created in the schema initialization block in ensure_db.
@@ -98,6 +101,10 @@ debug() {
   if [[ $VERBOSE -eq 1 ]]; then
     echo "[$PROG] $*" >&2
   fi
+}
+
+sqlite3() {
+  command sqlite3 -cmd ".timeout $SQLITE_BUSY_TIMEOUT_MS" "$@"
 }
 
 resolve_sql_seed_path() {
@@ -130,26 +137,57 @@ resolve_sql_seed_path() {
   fi
 }
 
-ensure_db() {
-  local db_exists=0
-  if [[ -f "$DB_PATH" ]]; then
-    db_exists=1
+db_lock_path() {
+  local db_path="$1"
+  printf '%s.lock' "$db_path"
+}
+
+with_exclusive_lock() {
+  local lock_file="$1"
+  shift
+
+  local lock_fd=""
+  exec {lock_fd}> "$lock_file"
+  if type -P flock >/dev/null 2>&1; then
+    flock -x "$lock_fd"
   fi
 
-  if ! command -v sqlite3 >/dev/null 2>&1; then
-    fatal "database not available, sqlite3 not in PATH"
+  local rc=0
+  if "$@"; then
+    rc=0
+  else
+    rc=$?
   fi
 
-  if [[ $db_exists -eq 1 ]]; then
+  if type -P flock >/dev/null 2>&1; then
+    flock -u "$lock_fd" || true
+  fi
+  exec {lock_fd}>&-
+  return $rc
+}
+
+ensure_db_pragmas() {
+  if [[ "$SQLITE_PRAGMA_DB_PATH" == "$DB_PATH" ]]; then
     return
   fi
+  sqlite3 "$DB_PATH" <<'SQL' >/dev/null 2>&1 || true
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+SQL
+  SQLITE_PRAGMA_DB_PATH="$DB_PATH"
+}
 
+ensure_db_locked() {
   local sql_seed
   local target_db="./WHEEL.db"
   local created_db=0
 
   if [[ "$DB_PATH" != "WHEEL.db" && "$DB_PATH" != "./WHEEL.db" ]]; then
     target_db="$DB_PATH"
+  fi
+
+  if [[ -f "$target_db" ]]; then
+    return
   fi
 
   sql_seed="$(resolve_sql_seed_path "$target_db")"
@@ -244,6 +282,22 @@ SQL
   fi
 }
 
+ensure_db() {
+  if ! type -P sqlite3 >/dev/null 2>&1; then
+    fatal "database not available, sqlite3 not in PATH"
+  fi
+
+  if [[ -f "$DB_PATH" ]]; then
+    ensure_db_pragmas
+    return
+  fi
+
+  local lock_file
+  lock_file="$(db_lock_path "$DB_PATH")"
+  with_exclusive_lock "$lock_file" ensure_db_locked
+  ensure_db_pragmas
+}
+
 run_bootstrap_scan() {
   local target_db="$1"
   if [[ "${WHEEL_SKIP_AUTO_SCAN:-0}" == "1" ]]; then
@@ -269,7 +323,7 @@ run_bootstrap_scan() {
 }
 
 refresh_sql_dump() {
-  if ! command -v sqlite3 >/dev/null 2>&1; then
+  if ! type -P sqlite3 >/dev/null 2>&1; then
     debug "skip dump refresh: sqlite3 not available"
     return
   fi
@@ -2291,6 +2345,8 @@ command_defs() {
 }
 
 main() {
+  require_integer "$SQLITE_BUSY_TIMEOUT_MS" "WHEEL_SQLITE_BUSY_TIMEOUT_MS"
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --database) DB_PATH="$2"; PARAM_STATE=""; shift 2;;
