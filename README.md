@@ -277,3 +277,81 @@ Window {
     delegate: squareComponent 
 }
 ```
+
+
+## 📊 Project Inventory Snapshot
+
+### 🗂 Database Structure
+- **Core tables:** **8**
+- **Non-empty tables:** **2** (`files`, `defs`)
+
+---
+
+### 📦 Project Inventory
+- **Files:** **2**
+- **Definitions:** **86**
+- **Refs:** **0**
+- **Changes:** **0**
+- **change_defs:** **0**
+- **Todo items:** **0**
+- **spec_memory rows:** **0**
+
+---
+
+### 📐 Definition Density
+- **Defs per file:** **43.00**  
+  _(86 defs / 2 files)_
+
+---
+
+### 📁 File Concentration
+- `wheel.sh` — **61 defs (70.93%)**
+- `wheel-scan.sh` — **25 defs (29.07%)**
+
+---
+
+### 🧩 Definition Characteristics
+
+**Type mix:**
+- function — **86 / 86 (100%)**
+
+**Signature uniqueness:**
+- Unique signatures — **84 / 86 (97.67%)**
+- Duplicate signatures:
+  - `main() {`
+  - `usage() {`
+  _(Each appears in both files)_
+
+---
+
+### ⚙ Surface Area Signals
+
+**`wheel.sh`**
+- `command_*` functions — **12**
+- Command surface ratio — **19.67%** of file defs
+
+**`wheel-scan.sh`**
+- `scan_*` functions — **7 (28.0%)**
+- `wheel_*` DB helper functions — **6 (24.0%)**
+
+---
+
+### 🧾 Metadata Completeness
+- Definition descriptions present — **86 / 86 (100%)**
+- File descriptions present — **2 / 2 (100%)**
+- Definition parameters populated — **0 / 86 (0%)**
+
+---
+
+### 📡 Workflow & Process State
+The following tables are currently empty:
+- `refs`
+- `changes`
+- `change_defs`
+- `todo`
+- `spec_memory`
+
+As a result:
+- **Impact metrics:** Not computable  
+- **Timeline metrics:** Not computable  
+- **Throughput metrics:** Not computable  
